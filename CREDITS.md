@@ -5,13 +5,9 @@
 **Cliff Messenger**  
 An end-to-end encrypted secure messenger.
 
----
-
 ## Author
 
 - **Sean Hank**
-
----
 
 ## Open Source Libraries
 
@@ -80,16 +76,12 @@ This project utilizes the following open source packages. We extend our gratitud
 | [flutter_test](https://github.com/flutter/flutter) | SDK | Testing framework |
 | [flutter_lints](https://github.com/dart-lang/linter) | ^6.0.0 | Code linting |
 
----
-
 ## Acknowledgments
 
 - The Flutter team for building an excellent cross-platform framework
 - The Dart team for a robust and secure programming language
 - All maintainers of the packages used in this project
 - The cryptography community for open standards and implementations
-
----
 
 ## License of Dependencies
 
