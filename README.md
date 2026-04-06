@@ -88,7 +88,7 @@ See: `LICENSE`
 
 ## Credits
 
-See: `CREDITS`
+See: `CREDITS.md`
 
 ## Contributing
 
