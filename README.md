@@ -7,17 +7,15 @@
 - [Getting Started](#getting-started)
 - [Highlights](#highlights)
 - [Features](#features)
+- [License](#license)
+- [Credits](#credits)
 - [Contributing](#contributing)
-
----
 
 ## Getting Started
 
 ### Installation
 
 Simply download the latest release and enjoy! 
-
----
 
 ## Highlights
 
@@ -40,8 +38,6 @@ Simply download the latest release and enjoy!
 - **Server Never Sees Plaintext**: The server operates as a blind relay, storing and forwarding only encrypted data. Once data was sent, the server removes the data from its memory and database.
 - **Per-User Key Management**: Each user maintains their own cryptographic keypair
 - **Group Key Re-Encryption**: When members join or leave, keys are securely re-encrypted
-
----
 
 ## Features
 
@@ -83,7 +79,16 @@ Simply download the latest release and enjoy!
 | SQLCipher | Encrypted local database for message caching |
 | PBKDF2 | Key derivation with multiple SHA-256 iterations |
 
----
+## License
+
+**All rights reserved.**  
+Copyright © Sean Hank.
+
+See: `LICENSE`
+
+## Credits
+
+See: `CREDITS`
 
 ## Contributing
 
