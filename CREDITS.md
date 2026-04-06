@@ -9,8 +9,7 @@ An end-to-end encrypted secure messenger.
 
 ## Author
 
-- **Cliff Messenger Team**
-  - Sean Hank
+- **Sean Hank**
 
 ---
 
