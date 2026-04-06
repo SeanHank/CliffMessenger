@@ -93,3 +93,7 @@ See: `CREDITS.md`
 ## Contributing
 
 This repository is currently NOT accepting public contributions.
+
+Forks and private modifications are not supported through official channels. Users who wish to create derivative works may do so under the constraints of the copyright license, though no assistance or guidance for such modifications is provided.
+
+Questions, bug reports, and feature requests will not receive responses through public channels. The project maintains its current scope and direction without external input.
