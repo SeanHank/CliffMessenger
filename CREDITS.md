@@ -3,14 +3,14 @@
 ## Project
 
 **Cliff Messenger**  
-Version 2026.4.6  
-An end-to-end encrypted, privacy-focused group messaging application.
+An end-to-end encrypted secure messenger.
 
 ---
 
 ## Author
 
 - **Cliff Messenger Team**
+  - Sean Hank
 
 ---
 
