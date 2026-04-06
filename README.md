@@ -87,4 +87,4 @@ Simply download the latest release and enjoy!
 
 ## Contributing
 
-
+This repository is currently NOT accepting public contributions.
