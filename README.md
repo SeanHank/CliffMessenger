@@ -21,23 +21,23 @@ Simply download the latest release and enjoy!
 
 ### Security First
 
-- **End-to-End Encryption**: All messages are encrypted using AES with group-specific keys
-- **RSA-2048 Key Exchange**: Secure key distribution using RSA padding
+- **End-to-End Encryption**: All messages are encrypted using AES with group-specific keys.
+- **RSA-2048 Key Exchange**: Secure key distribution using RSA padding.
 - **Password-Protected Private Keys**: User private keys are encrypted with AES. 
-- **Encrypted Local Database**: SQLCipher-encrypted local storage protects cached messages
-- **Double File Encryption**: Files are encrypted with both file-specific keys and group keys
+- **Encrypted Local Database**: SQLCipher-encrypted local storage protects cached messages.
+- **Double File Encryption**: Files are encrypted with both file-specific keys and group keys.
 
 ### Decentralized Architecture
 
-- **Self-Hosted Servers**: Run your own messaging server with zero configuration
-- **LAN Discovery**: Automatic server discovery - no manual IP configuration needed
-- **No Central Infrastructure**: Communicate directly over your local network without internet dependency
+- **Self-Hosted Servers**: Run your own messaging server with zero configuration.
+- **LAN Discovery**: Automatic server discovery - no manual IP configuration needed.
+- **No Central Infrastructure**: Communicate directly over your local network without internet dependency.
 
 ### Privacy by Design
 
 - **Server Never Sees Plaintext**: The server operates as a blind relay, storing and forwarding only encrypted data. Once data was sent, the server removes the data from its memory and database.
-- **Per-User Key Management**: Each user maintains their own cryptographic keypair
-- **Group Key Re-Encryption**: When members join or leave, keys are securely re-encrypted
+- **Per-User Key Management**: Each user maintains their own cryptographic keypair.
+- **Group Key Re-Encryption**: When members join or leave, keys are securely re-encrypted.
 
 ## Features
 
