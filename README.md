@@ -81,7 +81,7 @@ Simply download the latest release and enjoy!
 | RSA-2048 | Asymmetric encryption for secure key exchange |
 | BCrypt | Password hashing with salt for authentication |
 | SQLCipher | Encrypted local database for message caching |
-| PBKDF2 | Key derivation with 10,000 SHA-256 iterations |
+| PBKDF2 | Key derivation with multiple SHA-256 iterations |
 
 ---
 
