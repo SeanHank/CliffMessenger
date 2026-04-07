@@ -2,7 +2,7 @@
 
 **Cliff Messenger** is an end-to-end encrypted, privacy-focused instant messaging application designed exclusively for group communication. Built with Flutter, it provides robust security through encrypted message exchange, and a decentralized architecture that puts you in complete control of your data.
 
-_“Reborn in blood beneath the radiance of divinity, it awaken to a world transformed, its soul rekindled by sacred light and carried forward by the echoes of destiny.”_
+_“Reborn in blood beneath the radiance of divinity, it awaken to a world transformed, its soul rekindled by sacred light and carried forward by the echoes of destiny.” - Sean Hank_
 
 ## Contents
 
