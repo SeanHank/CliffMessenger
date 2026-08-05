@@ -1,0 +1,553 @@
+name: Build & Release
+
+# Cliff Messenger — Multi-platform automated build & release pipeline.
+# Targets: macOS, Linux, Windows (desktop) + Android, iOS (mobile).
+#
+# Triggers:
+#   1. Push a tag matching `v*`        → build all platforms + create Release
+#   2. Manual dispatch (workflow_dispatch) → choose platforms + optional version override
+#   3. Pull request to main            → build only (no release), for CI validation
+#
+# Required secrets (all optional — builds fall back to unsigned/ad-hoc when absent):
+#   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+#   IOS_P12_BASE64, IOS_P12_PASSWORD, IOS_PROVISIONING_PROFILE_BASE64
+#   MACOS_P12_BASE64, MACOS_P12_PASSWORD, MACOS_APP_ID (Developer ID)
+#   SLACK_WEBHOOK_URL (failure notifications)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version override (e.g. 2026.5.0). Leave empty to use pubspec or tag.'
+        required: false
+        type: string
+      platforms:
+        description: 'Platforms to build'
+        required: true
+        type: choice
+        default: 'all'
+        options:
+          - all
+          - android
+          - ios
+          - macos
+          - linux
+          - windows
+      create_release:
+        description: 'Create a GitHub Release with artifacts'
+        required: true
+        type: boolean
+        default: true
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_CHANNEL: 'stable'
+  FLUTTER_VERSION: '3.27.0'
+  JAVA_VERSION: '17'
+  APP_NAME: 'cliff_messenger'
+  APP_DISPLAY_NAME: 'Cliff Messenger'
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # 1. Prepare: resolve the version and publish it to downstream jobs.
+  # ─────────────────────────────────────────────────────────────────────────
+  prepare:
+    name: Prepare (version & metadata)
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      build_number: ${{ steps.meta.outputs.build_number }}
+      tag: ${{ steps.meta.outputs.tag }}
+      is_release: ${{ steps.meta.outputs.is_release }}
+      should_release: ${{ steps.meta.outputs.should_release }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version & release metadata
+        id: meta
+        run: |
+          bash .github/scripts/get-version.sh \
+            --input-version "${{ inputs.version }}" \
+            --ref "${{ github.ref }}" \
+            --event "${{ github.event_name }}" \
+            --create-release "${{ inputs.create_release }}"
+
+      - name: Summary
+        run: |
+          echo "### Build Metadata" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Key | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | \`${{ steps.meta.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build number | \`${{ steps.meta.outputs.build_number }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tag | \`${{ steps.meta.outputs.tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Release build | \`${{ steps.meta.outputs.is_release }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Will create Release | \`${{ steps.meta.outputs.should_release }}\` |" >> $GITHUB_STEP_SUMMARY
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 2. Android — .apk (ubuntu runner)
+  # ─────────────────────────────────────────────────────────────────────────
+  build-android:
+    name: Android APK
+    needs: prepare
+    if: |
+      github.event_name == 'pull_request' ||
+      inputs.platforms == 'all' ||
+      inputs.platforms == 'android' ||
+      github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Bump version (if overridden)
+        if: needs.prepare.outputs.version != ''
+        run: |
+          sed -i "s/^version: .*/version: ${{ needs.prepare.outputs.version }}+${{ needs.prepare.outputs.build_number }}/" pubspec.yaml
+          grep '^version:' pubspec.yaml
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Configure release signing
+        if: github.event_name != 'pull_request' && env.KEYSTORE_BASE64 != ''
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: bash .github/scripts/android-signing.sh
+
+      - name: Build APK
+        run: flutter build apk --release --verbose
+
+      - name: Rename APK
+        run: |
+          mkdir -p artifacts
+          cp build/app/outputs/flutter-apk/app-release.apk \
+             "artifacts/${{ env.APP_NAME }}-${{ needs.prepare.outputs.version }}-android.apk"
+          ls -lh artifacts/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: artifacts/*.apk
+          retention-days: 14
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 3. iOS — .ipa (macos runner)
+  # ─────────────────────────────────────────────────────────────────────────
+  build-ios:
+    name: iOS IPA
+    needs: prepare
+    if: |
+      github.event_name == 'pull_request' ||
+      inputs.platforms == 'all' ||
+      inputs.platforms == 'ios' ||
+      github.event_name == 'push'
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Bump version (if overridden)
+        if: needs.prepare.outputs.version != ''
+        run: |
+          sed -i '' "s/^version: .*/version: ${{ needs.prepare.outputs.version }}+${{ needs.prepare.outputs.build_number }}/" pubspec.yaml
+          grep '^version:' pubspec.yaml
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install --repo-update || pod install
+
+      - name: Setup code signing (if secrets present)
+        if: github.event_name != 'pull_request' && env.P12_BASE64 != ''
+        env:
+          P12_BASE64: ${{ secrets.IOS_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.IOS_P12_PASSWORD }}
+          PROVISION_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: bash .github/scripts/ios-signing.sh
+
+      - name: Build iOS (no codesign fallback)
+        if: github.event_name == 'pull_request' || env.P12_BASE64 == ''
+        env:
+          P12_BASE64: ${{ secrets.IOS_P12_BASE64 }}
+        run: flutter build ios --release --no-codesign --verbose
+
+      - name: Build iOS (signed)
+        if: github.event_name != 'pull_request' && env.P12_BASE64 != ''
+        env:
+          P12_BASE64: ${{ secrets.IOS_P12_BASE64 }}
+        run: flutter build ios --release --verbose
+
+      - name: Assemble IPA
+        run: bash .github/scripts/package-ios.sh "${{ needs.prepare.outputs.version }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: artifacts/*.ipa
+          retention-days: 14
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 4. macOS — .app (macos runner)
+  # ─────────────────────────────────────────────────────────────────────────
+  build-macos:
+    name: macOS App
+    needs: prepare
+    if: |
+      github.event_name == 'pull_request' ||
+      inputs.platforms == 'all' ||
+      inputs.platforms == 'macos' ||
+      github.event_name == 'push'
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Bump version (if overridden)
+        if: needs.prepare.outputs.version != ''
+        run: |
+          sed -i '' "s/^version: .*/version: ${{ needs.prepare.outputs.version }}+${{ needs.prepare.outputs.build_number }}/" pubspec.yaml
+          grep '^version:' pubspec.yaml
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Install CocoaPods
+        run: |
+          cd macos
+          pod install --repo-update || pod install
+
+      - name: Build macOS
+        run: flutter build macos --release --verbose
+
+      - name: Package .app into zip
+        run: bash .github/scripts/package-macos.sh "${{ needs.prepare.outputs.version }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-app
+          path: artifacts/*.zip
+          retention-days: 14
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 5. Linux — .deb + .rpm (ubuntu runner)
+  # ─────────────────────────────────────────────────────────────────────────
+  build-linux:
+    name: Linux (deb & rpm)
+    needs: prepare
+    if: |
+      github.event_name == 'pull_request' ||
+      inputs.platforms == 'all' ||
+      inputs.platforms == 'linux' ||
+      github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            clang cmake git ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libstdc++-12-dev \
+            libsqlcipher-dev \
+            dpkg-dev rpm \
+            libfuse2
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Bump version (if overridden)
+        if: needs.prepare.outputs.version != ''
+        run: |
+          sed -i "s/^version: .*/version: ${{ needs.prepare.outputs.version }}+${{ needs.prepare.outputs.build_number }}/" pubspec.yaml
+          grep '^version:' pubspec.yaml
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Linux
+        run: flutter build linux --release --verbose
+
+      - name: Package .deb and .rpm
+        run: |
+          bash .github/scripts/package-linux.sh \
+            "${{ needs.prepare.outputs.version }}" \
+            "${{ env.APP_NAME }}" \
+            "${{ env.APP_DISPLAY_NAME }}"
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-deb
+          path: artifacts/*.deb
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload .rpm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-rpm
+          path: artifacts/*.rpm
+          retention-days: 14
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 6. Windows — .exe zip (windows runner)
+  # ─────────────────────────────────────────────────────────────────────────
+  build-windows:
+    name: Windows EXE
+    needs: prepare
+    if: |
+      github.event_name == 'pull_request' ||
+      inputs.platforms == 'all' ||
+      inputs.platforms == 'windows' ||
+      github.event_name == 'push'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Bump version (if overridden)
+        if: needs.prepare.outputs.version != ''
+        shell: pwsh
+        run: |
+          (Get-Content pubspec.yaml) -replace '^version: .*', 'version: ${{ needs.prepare.outputs.version }}+${{ needs.prepare.outputs.build_number }}' | Set-Content pubspec.yaml
+          Select-String -Path pubspec.yaml -Pattern '^version:'
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Windows
+        run: flutter build windows --release --verbose
+
+      - name: Package release folder into zip
+        shell: pwsh
+        run: ./.github/scripts/package-windows.ps1 -Version "${{ needs.prepare.outputs.version }}" -AppName "${{ env.APP_NAME }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: artifacts/*.zip
+          retention-days: 14
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 7. Release — collect all artifacts and publish a GitHub Release.
+  # ─────────────────────────────────────────────────────────────────────────
+  release:
+    name: Publish GitHub Release
+    needs: [prepare, build-android, build-ios, build-macos, build-linux, build-windows]
+    # Run when not cancelled and a release is wanted. Skipped builds (e.g. when
+    # a single platform was selected) do not block the release; failed builds
+    # are surfaced by the notify job. Use !cancelled() so partial releases are
+    # still possible for the platforms that did succeed.
+    if: ${{ !cancelled() && needs.prepare.outputs.should_release == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify at least one build succeeded
+        run: |
+          ANY_OK="false"
+          [ "${{ needs.build-android.result }}" = "success" ] && ANY_OK="true"
+          [ "${{ needs.build-ios.result }}" = "success" ]     && ANY_OK="true"
+          [ "${{ needs.build-macos.result }}" = "success" ]   && ANY_OK="true"
+          [ "${{ needs.build-linux.result }}" = "success" ]   && ANY_OK="true"
+          [ "${{ needs.build-windows.result }}" = "success" ] && ANY_OK="true"
+          if [ "$ANY_OK" != "true" ]; then
+            echo "No platform build succeeded — skipping release." >&2
+            exit 1
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Flatten artifacts into a single folder
+        run: |
+          mkdir -p staged
+          find release-assets -type f \( \
+            -name '*.apk' -o \
+            -name '*.ipa' -o \
+            -name '*.zip' -o \
+            -name '*.deb' -o \
+            -name '*.rpm' \
+          \) -exec cp {} staged/ \;
+          if [ -z "$(ls -A staged 2>/dev/null)" ]; then
+            echo "No distributable artifacts found — aborting release." >&2
+            exit 1
+          fi
+          echo "### Artifacts staged for release" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          ls -lh staged/ | tee -a $GITHUB_STEP_SUMMARY
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          bash .github/scripts/generate-release-notes.sh \
+            "${{ needs.prepare.outputs.version }}" \
+            "${{ env.APP_DISPLAY_NAME }}" > release-notes.md
+          cat release-notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: ${{ env.APP_DISPLAY_NAME }} ${{ needs.prepare.outputs.version }}
+          body_path: release-notes.md
+          files: staged/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 8. Notify — fire when any build job fails.
+  # ─────────────────────────────────────────────────────────────────────────
+  notify:
+    name: Notify on failure
+    needs: [prepare, build-android, build-ios, build-macos, build-linux, build-windows]
+    if: always() && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - name: Build failure summary
+        id: summary
+        run: |
+          FAILED=""
+          [ "${{ needs.build-android.result }}" = "failure" ] && FAILED="$FAILED android"
+          [ "${{ needs.build-ios.result }}" = "failure" ]     && FAILED="$FAILED ios"
+          [ "${{ needs.build-macos.result }}" = "failure" ]   && FAILED="$FAILED macos"
+          [ "${{ needs.build-linux.result }}" = "failure" ]   && FAILED="$FAILED linux"
+          [ "${{ needs.build-windows.result }}" = "failure" ] && FAILED="$FAILED windows"
+          # trim leading space
+          FAILED="${FAILED# }"
+          echo "failed=$FAILED" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Build result matrix"
+            echo ""
+            echo "| Platform | Result |"
+            echo "|----------|--------|"
+            echo "| Android | ${{ needs.build-android.result }} |"
+            echo "| iOS     | ${{ needs.build-ios.result }} |"
+            echo "| macOS   | ${{ needs.build-macos.result }} |"
+            echo "| Linux   | ${{ needs.build-linux.result }} |"
+            echo "| Windows | ${{ needs.build-windows.result }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Write the issue body to a file for create-issue-from-file.
+          {
+            echo "## Build failure — run [#${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            echo ""
+            echo "**Failed platforms:** \`${FAILED}\`"
+            echo ""
+            echo "| Platform | Result |"
+            echo "|----------|--------|"
+            echo "| Android | \`${{ needs.build-android.result }}\` |"
+            echo "| iOS     | \`${{ needs.build-ios.result }}\` |"
+            echo "| macOS   | \`${{ needs.build-macos.result }}\` |"
+            echo "| Linux   | \`${{ needs.build-linux.result }}\` |"
+            echo "| Windows | \`${{ needs.build-windows.result }}\` |"
+            echo ""
+            echo "**Commit:** ${{ github.sha }}"
+            echo "**Ref:** ${{ github.ref }}"
+            echo "**Triggered by:** ${{ github.event_name }}"
+          } > failure-body.md
+
+      - name: Create issue on failure
+        if: steps.summary.outputs.failed != ''
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: "Build failure #${{ github.run_id }} — failed: ${{ steps.summary.outputs.failed }}"
+          content-filepath: failure-body.md
+          labels: |
+            build-failure
+            automated
+
+      - name: Notify Slack (if webhook configured)
+        if: steps.summary.outputs.failed != '' && env.SLACK_WEBHOOK != ''
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "Cliff Messenger build failed",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":x: *Cliff Messenger build failed*\n*Failed platforms:* ${{ steps.summary.outputs.failed }}\n*Run:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run #${{ github.run_id }}>\n*Commit:* ${{ github.sha }}"
+                  }
+                }
+              ]
+            }
