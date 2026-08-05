@@ -280,7 +280,7 @@ All communication uses JSON `WSMessage` frames over WebSocket:
 {
   "type": "<message-type>",
   "id": "<uuid-v4>",
-  "payload": { ... }
+  "payload": {}
 }
 ```
 
