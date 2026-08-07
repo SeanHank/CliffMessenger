@@ -306,7 +306,7 @@ The server is a stateful relay: it authenticates users, tracks connected clients
 Contributions are welcomed! This project follows a standard fork-and-PR workflow.
 
 1. **Fork** the repository
-2. **Clone** your fork: `git clone https://github.com/<your-username>/CliffMessenger.git`
+2. **Clone** your fork: `git clone https://github.com/SeanHank/CliffMessenger.git`
 3. **Create a branch**: `git checkout -b feature/my-feature`
 4. **Make changes** following the guidelines below
 5. **Commit** with clear messages
