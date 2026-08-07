@@ -308,7 +308,7 @@ Contributions are welcomed! This project follows a standard fork-and-PR workflow
 1. **Fork** the repository
 2. **Clone** your fork: `git clone https://github.com/SeanHank/CliffMessenger.git`
 3. **Create a branch**: `git checkout -b feature/my-feature`
-4. **Make your changes**
+4. **Make changes**
 5. **Commit** with clear messages
 6. **Open a Pull Request**
 
